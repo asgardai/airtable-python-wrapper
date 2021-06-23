@@ -98,6 +98,8 @@ from urllib.parse import quote
 
 from .auth import AirtableAuth
 from .params import AirtableParams
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
 
 
 class Airtable(object):
@@ -108,7 +110,16 @@ class Airtable(object):
     API_URL = posixpath.join(API_BASE_URL, VERSION)
     MAX_RECORDS_PER_REQUEST = 10
 
-    def __init__(self, base_id, table_name, api_key, timeout=None):
+    def __init__(
+        self,
+        base_id,
+        table_name,
+        api_key,
+        timeout=None,
+        retries: int = 3,
+        retries_backoff_factor: float = 0.5,
+        retries_codes=(500, 502, 504)
+    ):
         """
         Instantiates a new Airtable instance
 
@@ -130,8 +141,24 @@ class Airtable(object):
                 <https://requests.readthedocs.io/en/master/user/advanced/#timeouts>`_
 
         """
+        # create requests session
         session = requests.Session()
+
+        # setup retry on session
+        retry = Retry(
+            total=retries,
+            read=retries,
+            connect=retries,
+            backoff_factor=retries_backoff_factor,
+            status_forcelist=retries_codes,
+        )
+        adapter = HTTPAdapter(max_retries=retry)
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+
+        # setup auth on session
         session.auth = AirtableAuth(api_key=api_key)
+
         self.session = session
         self.table_name = table_name
         url_safe_table_name = quote(table_name, safe="")
